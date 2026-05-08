@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: vibe-chess-server
+    runtime: node
+    plan: free
+    rootDir: server
+    buildCommand: npm ci && npm run build
+    startCommand: node dist/main.js
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      - key: CLIENT_ORIGIN
+        sync: false
+      - key: PORT
+        value: 3000
+    healthCheckPath: /health

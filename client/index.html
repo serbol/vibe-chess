@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>vibe chess</title>
+    <link rel="stylesheet" href="/css/style.css" />
+  </head>
+  <body>
+    <!-- Landing screen -->
+    <section id="screen-landing" class="screen">
+      <div class="card">
+        <h1>vibe<span class="accent">.chess</span></h1>
+        <p class="muted">Enter a name and find a match.</p>
+        <input id="name-input" type="text" maxlength="24" placeholder="Your name" autocomplete="off" />
+        <button id="find-game-btn" class="primary">Find Game</button>
+        <p id="landing-status" class="status"></p>
+      </div>
+    </section>
+
+    <!-- Game screen -->
+    <section id="screen-game" class="screen hidden">
+      <header class="game-header">
+        <div class="player-info">
+          <span class="player opponent" id="opponent-name">Opponent</span>
+          <span class="vs">vs</span>
+          <span class="player you" id="your-name">You</span>
+        </div>
+        <div class="turn-indicator">
+          <span id="turn-label">White to move</span>
+        </div>
+        <div class="game-controls">
+          <button id="resign-btn">Resign</button>
+          <button id="draw-btn">Offer Draw</button>
+        </div>
+      </header>
+
+      <main class="game-main">
+        <aside class="captured-tray captured-left" id="captured-by-you" aria-label="You captured"></aside>
+        <div id="pixi-mount" class="board-mount"></div>
+        <aside class="captured-tray captured-right" id="captured-by-opp" aria-label="Opponent captured"></aside>
+      </main>
+
+      <aside class="move-history" aria-label="Move history">
+        <h2>Moves</h2>
+        <ol id="move-list"></ol>
+      </aside>
+
+      <div id="toast" class="toast hidden"></div>
+
+      <!-- Draw offer modal -->
+      <div id="draw-modal" class="modal hidden">
+        <div class="modal-card">
+          <p>Opponent offers a draw.</p>
+          <div class="modal-actions">
+            <button id="accept-draw-btn" class="primary">Accept</button>
+            <button id="decline-draw-btn">Decline</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Game over modal -->
+      <div id="gameover-modal" class="modal hidden">
+        <div class="modal-card">
+          <h2 id="gameover-title">Game over</h2>
+          <p id="gameover-detail" class="muted"></p>
+          <div class="modal-actions">
+            <button id="gameover-rematch-btn" class="primary">Find another game</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <script type="module" src="/js/main.js"></script>
+  </body>
+</html>
