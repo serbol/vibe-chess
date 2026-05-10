@@ -115,11 +115,12 @@ button.secondary:hover { background: var(--panel-2); border-color: var(--accent-
 /* Game screen */
 #screen-game {
   display: grid;
-  grid-template-columns: 1fr min(80vmin, 720px) 240px;
+  grid-template-columns: 240px min(80vmin, 720px) 240px;
   grid-template-rows: auto 1fr;
   gap: 16px;
   padding: 16px;
   align-items: start;
+  justify-content: center;
 }
 
 .game-header {
