@@ -1,6 +1,12 @@
 import { io } from 'socket.io-client';
 
-const SERVER_URL = import.meta.env.VITE_SERVER_URL ?? 'http://localhost:3000';
+// `||` (not `??`) so an empty string falls through to the dev default — Cloudflare
+// Pages and similar hosts can ship an empty VITE_SERVER_URL when the env var isn't
+// set on the right environment, and Socket.IO interprets that as "same origin".
+const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3000';
+if (!import.meta.env.VITE_SERVER_URL && import.meta.env.PROD) {
+  console.warn('VITE_SERVER_URL is not set — falling back to http://localhost:3000. Set it in your host\'s prod env vars and rebuild.');
+}
 
 class SocketClient {
   constructor() {

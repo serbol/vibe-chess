@@ -96,14 +96,14 @@ button.primary {
 }
 button.primary:hover { filter: brightness(1.05); background: linear-gradient(180deg, #f6c177 0%, #e0a85c 100%); }
 button.secondary {
-  width: 100%;
-  margin-top: 10px;
   background: transparent;
   border-color: var(--border);
   color: var(--text);
 }
 button.secondary:hover { background: var(--panel-2); border-color: var(--accent-2); }
-button.primary { width: 100%; }
+.card button.primary,
+.card button.secondary { width: 100%; }
+.card button.secondary { margin-top: 10px; }
 
 .status {
   color: var(--muted);

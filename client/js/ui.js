@@ -113,17 +113,21 @@ export const ui = {
   },
 
   // Game over
-  showGameOver(title, detail, onRematch) {
+  showGameOver(title, detail, onFindNew, onMenu) {
     const modal = document.getElementById('gameover-modal');
     document.getElementById('gameover-title').textContent = title;
     document.getElementById('gameover-detail').textContent = detail;
     modal.classList.remove('hidden');
-    const btn = document.getElementById('gameover-rematch-btn');
-    const onClick = () => {
+    const findBtn = document.getElementById('gameover-find-btn');
+    const menuBtn = document.getElementById('gameover-menu-btn');
+    const cleanup = () => {
       modal.classList.add('hidden');
-      btn.removeEventListener('click', onClick);
-      onRematch();
+      findBtn.removeEventListener('click', onFind);
+      menuBtn.removeEventListener('click', onM);
     };
-    btn.addEventListener('click', onClick);
+    const onFind = () => { cleanup(); onFindNew(); };
+    const onM = () => { cleanup(); onMenu(); };
+    findBtn.addEventListener('click', onFind);
+    menuBtn.addEventListener('click', onM);
   },
 };

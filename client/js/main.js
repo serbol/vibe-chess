@@ -287,15 +287,24 @@ function handleGameOver({ result, reason }) {
       : reason === 'resign' ? 'by resignation' : reason;
   }
 
+  // Capture the mode now — `activeGame` is cleared by returnToLanding before
+  // the user picks a button, so we have to remember which kind of game to start.
+  const wasBotGame = activeGame && activeGame !== socketClient;
+  const onFindNew = () => {
+    returnToLanding();
+    if (wasBotGame) handlePlayBot();
+    else handleFindGame();
+  };
+
   // Dramatic checkmate sequence on the loser's king.
   if (reason === 'checkmate' && app) {
     const loserColor = result === 'white' ? 'black' : 'white';
     const kingSquare = findKingSquare(state.fen, loserColor);
     void effects.checkmate(kingSquare, board, result).then(() => {
-      ui.showGameOver(title, detail, returnToLanding);
+      ui.showGameOver(title, detail, onFindNew, returnToLanding);
     });
   } else {
-    ui.showGameOver(title, detail, returnToLanding);
+    ui.showGameOver(title, detail, onFindNew, returnToLanding);
   }
 
   state.gameId = null;
