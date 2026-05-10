@@ -125,7 +125,9 @@ export class Pieces {
     sprite.eventMode = 'static';
     sprite.cursor = 'grab';
 
-    sprite.on('pointerdown', (e) => this._beginDrag(sprite, square, e));
+    // Look up the current square at drag time — this sprite gets reused across moves
+    // by setFromFen, so the captured `square` would go stale after the first move.
+    sprite.on('pointerdown', (e) => this._beginDrag(sprite, this._spriteSquare(sprite) ?? square, e));
     sprite.on('pointerover', () => this._onHover(sprite, true));
     sprite.on('pointerout', () => this._onHover(sprite, false));
     return sprite;
@@ -189,12 +191,20 @@ export class Pieces {
     this.onPickup?.(square);
 
     // Wire move/up handlers on the stage so we keep tracking even if the pointer leaves the sprite.
-    const stage = this.dragLayer.parent;
+    // Walk to the topmost ancestor (app.stage) — intermediate containers like boardRoot
+    // aren't interactive, so listeners attached there would never fire.
+    const stage = this._rootStage();
     const moveHandler = (ev) => this._onDragMove(ev);
     const upHandler = (ev) => this._onDragEnd(ev, moveHandler, upHandler);
     stage.on('globalpointermove', moveHandler);
     stage.once('pointerup', upHandler);
     stage.once('pointerupoutside', upHandler);
+  }
+
+  _rootStage() {
+    let n = this.dragLayer;
+    while (n.parent) n = n.parent;
+    return n;
   }
 
   _onDragMove(event) {
@@ -205,7 +215,7 @@ export class Pieces {
   }
 
   _onDragEnd(event, moveHandler, upHandler) {
-    const stage = this.dragLayer.parent;
+    const stage = this._rootStage();
     stage.off('globalpointermove', moveHandler);
     stage.off('pointerup', upHandler);
     stage.off('pointerupoutside', upHandler);

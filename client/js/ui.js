@@ -29,6 +29,9 @@ export const ui = {
       if (e.key === 'Enter') handler();
     });
   },
+  onPlayBot(handler) {
+    document.getElementById('play-bot-btn').addEventListener('click', handler);
+  },
 
   // Game header
   setPlayers(youName, oppName) {

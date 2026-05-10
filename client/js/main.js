@@ -2,6 +2,7 @@ import { Container } from 'pixi.js';
 import { Chess } from 'chess.js';
 import { socketClient } from './socket-client.js';
 import { ui } from './ui.js';
+import { LocalGame } from './bot.js';
 import { createPixiApp } from './pixi/app.js';
 import { loadAssets } from './pixi/assets.js';
 import { Board, fitBoardToScreen, BOARD_LOGICAL_SIZE } from './pixi/board.js';
@@ -31,6 +32,23 @@ const state = {
 let app, layers, board, highlights, pieces, effects;
 let boardRoot;
 
+// Either `socketClient` (online play) or a `LocalGame` (vs bot). Both expose
+// the same sendMove/resign/offerDraw/etc. surface, so call sites don't branch.
+let activeGame = null;
+
+// Server (or LocalGame) → handler dispatch. Used by the socket layer at boot
+// and re-used by LocalGame.onEvent for offline games.
+const dispatch = {
+  queued: () => ui.setLandingStatus('Queued — waiting for an opponent…'),
+  gameStart: handleGameStart,
+  moveMade: handleMoveMade,
+  invalidMove: handleInvalidMove,
+  gameOver: handleGameOver,
+  opponentDisconnected: () => ui.toast('Opponent disconnected.'),
+  drawOffered: handleDrawOffered,
+  drawDeclined: () => ui.toast('Draw declined.'),
+};
+
 // ---------------------------------------------------------------------------
 // Bootstrap
 // ---------------------------------------------------------------------------
@@ -38,15 +56,9 @@ let boardRoot;
 async function bootstrap() {
   // Pixi mount only once the game screen is in the DOM. We init lazily on first show.
   ui.onFindGame(handleFindGame);
+  ui.onPlayBot(handlePlayBot);
 
-  socketClient.on('queued', () => ui.setLandingStatus('Queued — waiting for an opponent…'));
-  socketClient.on('gameStart', handleGameStart);
-  socketClient.on('moveMade', handleMoveMade);
-  socketClient.on('invalidMove', handleInvalidMove);
-  socketClient.on('gameOver', handleGameOver);
-  socketClient.on('opponentDisconnected', () => ui.toast('Opponent disconnected.'));
-  socketClient.on('drawOffered', handleDrawOffered);
-  socketClient.on('drawDeclined', () => ui.toast('Draw declined.'));
+  for (const [event, fn] of Object.entries(dispatch)) socketClient.on(event, fn);
   socketClient.on('connect_error', () => ui.setLandingStatus('Could not reach the server.'));
   socketClient.on('disconnect', () => ui.toast('Disconnected from server.'));
 }
@@ -109,6 +121,7 @@ function handleFindGame() {
     return;
   }
   state.yourName = name;
+  activeGame = socketClient;
   ui.setLandingStatus('Connecting…');
   socketClient.connect();
   // Give the socket a tick to settle, then queue.
@@ -120,6 +133,19 @@ function handleFindGame() {
     }
   };
   queueWhenReady();
+}
+
+function handlePlayBot() {
+  const name = ui.getNameInput() || 'You';
+  state.yourName = name;
+  // Random color so the player gets to practice both sides.
+  const playerColor = Math.random() < 0.5 ? 'white' : 'black';
+  activeGame = new LocalGame({
+    playerName: name,
+    playerColor,
+    onEvent: (event, payload) => dispatch[event]?.(payload),
+  });
+  activeGame.start();
 }
 
 // ---------------------------------------------------------------------------
@@ -155,11 +181,11 @@ async function handleGameStart(payload) {
   // Wire the in-game buttons (idempotent: re-clicking the resign btn fine).
   ui.onResign(() => {
     if (!state.gameId) return;
-    socketClient.resign(state.gameId);
+    activeGame?.resign(state.gameId);
   });
   ui.onOfferDraw(() => {
     if (!state.gameId) return;
-    socketClient.offerDraw(state.gameId);
+    activeGame?.offerDraw(state.gameId);
     ui.toast('Draw offer sent.');
   });
 }
@@ -278,8 +304,8 @@ function handleGameOver({ result, reason }) {
 
 function handleDrawOffered() {
   ui.showDrawOffered(
-    () => state.gameId && socketClient.acceptDraw(state.gameId),
-    () => state.gameId && socketClient.declineDraw(state.gameId),
+    () => state.gameId && activeGame?.acceptDraw(state.gameId),
+    () => state.gameId && activeGame?.declineDraw(state.gameId),
   );
 }
 
@@ -287,6 +313,9 @@ function returnToLanding() {
   state.fen = new Chess().fen();
   state.chess = new Chess();
   state.lastMove = null;
+  state.pendingFromTo = null;
+  if (activeGame && activeGame !== socketClient) activeGame.stop?.();
+  activeGame = null;
   pieces?.setFromFen(state.fen);
   highlights?.setLastMove(null, null);
   highlights?.setCheckGlow(null);
@@ -319,13 +348,13 @@ function handleDrop(from, to) {
   }
 
   state.pendingFromTo = { from, to };
-  socketClient.sendMove(state.gameId, from, to);
+  activeGame?.sendMove(state.gameId, from, to);
 }
 
 function handlePromotion(from, to, choice) {
   highlights.clearLegalMoves();
   state.pendingFromTo = { from, to, promotion: choice };
-  socketClient.sendMove(state.gameId, from, to, choice);
+  activeGame?.sendMove(state.gameId, from, to, choice);
 }
 
 // ---------------------------------------------------------------------------
