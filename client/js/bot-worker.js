@@ -3,10 +3,10 @@
 import { selectBotMove } from './bot-engine.js';
 
 self.addEventListener('message', (event) => {
-  const { type, fen, reqId } = event.data ?? {};
+  const { type, fen, reqId, difficulty } = event.data ?? {};
   if (type !== 'compute') return;
   try {
-    const move = selectBotMove(fen);
+    const move = selectBotMove(fen, difficulty);
     self.postMessage({ type: 'result', reqId, move });
   } catch (err) {
     self.postMessage({ type: 'error', reqId, message: String(err?.message ?? err) });

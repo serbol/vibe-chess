@@ -30,7 +30,30 @@ export const ui = {
     });
   },
   onPlayBot(handler) {
-    document.getElementById('play-bot-btn').addEventListener('click', handler);
+    // Wrap to drop the click event arg — handler signature is handler(difficulty?).
+    document.getElementById('play-bot-btn').addEventListener('click', () => handler());
+  },
+
+  // Bot difficulty picker — handler is called with 'easy' | 'medium' | 'hard',
+  // or not called at all if the user cancels.
+  showDifficultyPicker(onPick) {
+    const modal = document.getElementById('difficulty-modal');
+    modal.classList.remove('hidden');
+    const buttons = modal.querySelectorAll('.difficulty-btn');
+    const cancel = document.getElementById('difficulty-cancel-btn');
+    const cleanup = () => {
+      modal.classList.add('hidden');
+      buttons.forEach((b) => b.removeEventListener('click', onBtn));
+      cancel.removeEventListener('click', onCancel);
+    };
+    const onBtn = (e) => {
+      const difficulty = e.currentTarget.dataset.difficulty;
+      cleanup();
+      onPick(difficulty);
+    };
+    const onCancel = () => cleanup();
+    buttons.forEach((b) => b.addEventListener('click', onBtn));
+    cancel.addEventListener('click', onCancel);
   },
   onInstall(handler) {
     const btn = document.getElementById('install-btn');

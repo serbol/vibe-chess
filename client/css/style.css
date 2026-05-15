@@ -162,6 +162,21 @@ button.secondary:hover { background: var(--panel-2); border-color: var(--accent-
 .card button.secondary { width: 100%; }
 .card button.secondary { margin-top: 10px; }
 
+/* Bot difficulty picker — three equal-style buttons in a row, cancel below. */
+.difficulty-actions {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.difficulty-actions .difficulty-btn { width: 100%; }
+.difficulty-cancel { width: 100%; }
+@media (max-width: 600px) {
+  .difficulty-actions {
+    grid-template-columns: 1fr;
+  }
+}
+
 .install-btn {
   width: 100%;
   margin-top: 10px;
@@ -191,33 +206,43 @@ button.secondary:hover { background: var(--panel-2); border-color: var(--accent-
   min-height: 20px;
 }
 
-/* Game screen */
+/* Game screen — left rail (header), board (center), move history (right).
+   All three desktop columns are pinned to --board-size (the board's actual
+   rendered side length) so they line up flush at top and bottom. */
 #screen-game {
+  --board-size: calc(min(80vmin, 720px) - 144px);
   display: grid;
   grid-template-columns: 240px min(80vmin, 720px) 240px;
-  grid-template-rows: auto 1fr;
+  grid-template-rows: auto;
   gap: 16px;
   padding: 16px;
-  align-items: start;
   justify-content: center;
+  align-items: start;
 }
 
 .game-header {
-  grid-column: 1 / 4;
+  grid-column: 1 / 2;
+  height: var(--board-size);
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
   justify-content: space-between;
+  gap: 18px;
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 12px;
-  padding: 12px 20px;
+  padding: 18px 16px;
+  text-align: center;
+  min-height: 0;
+  overflow-y: auto;
 }
-.player-info { display: flex; align-items: center; gap: 12px; font-weight: 500; }
+.player-info { display: flex; flex-direction: column; align-items: center; gap: 6px; font-weight: 500; }
 .player.you { color: var(--accent); }
 .player.opponent { color: var(--accent-2); }
-.vs { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.1em; }
-.turn-indicator { font-weight: 600; font-size: 16px; }
-.game-controls { display: flex; gap: 8px; }
+.vs { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; }
+.turn-indicator { font-weight: 600; font-size: 16px; line-height: 1.3; }
+.game-controls { display: flex; flex-direction: column; gap: 8px; }
+.game-controls button { width: 100%; }
 
 .game-main {
   grid-column: 2 / 3;
@@ -255,11 +280,12 @@ button.secondary:hover { background: var(--panel-2); border-color: var(--accent-
 
 .move-history {
   grid-column: 3 / 4;
+  height: var(--board-size);
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 16px;
-  height: min(80vmin, 720px);
+  min-height: 0;
   overflow-y: auto;
 }
 .move-history h2 {
@@ -392,14 +418,17 @@ button.secondary:hover { background: var(--panel-2); border-color: var(--accent-
 
   .game-header {
     grid-column: 1;
+    height: auto;
+    justify-content: flex-start;
     flex-direction: column;
+    align-items: stretch;
     gap: 10px;
     padding: 12px;
     text-align: center;
   }
-  .player-info { flex-wrap: wrap; justify-content: center; }
-  .game-controls { width: 100%; justify-content: center; }
-  .game-controls button { flex: 1; max-width: 200px; }
+  .player-info { flex-direction: column; align-items: center; gap: 6px; }
+  .game-controls { flex-direction: column; gap: 8px; }
+  .game-controls button { width: 100%; }
 
   .game-main {
     grid-column: 1;

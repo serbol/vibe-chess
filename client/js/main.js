@@ -261,7 +261,11 @@ function handleFindGame() {
   queueWhenReady();
 }
 
-function handlePlayBot() {
+function handlePlayBot(difficulty) {
+  if (!difficulty) {
+    ui.showDifficultyPicker((choice) => handlePlayBot(choice));
+    return;
+  }
   const name = ui.getNameInput() || 'You';
   state.yourName = name;
   // Random color so the player gets to practice both sides.
@@ -269,6 +273,7 @@ function handlePlayBot() {
   activeGame = new LocalGame({
     playerName: name,
     playerColor,
+    difficulty,
     onEvent: (event, payload) => dispatch[event]?.(payload),
   });
   activeGame.start();
@@ -528,9 +533,10 @@ function handleGameOver({ result, reason }) {
   // Capture the mode now — `activeGame` is cleared by returnToLanding before
   // the user picks a button, so we have to remember which kind of game to start.
   const wasBotGame = activeGame && activeGame !== socketClient;
+  const prevDifficulty = wasBotGame ? activeGame.difficulty : null;
   const onFindNew = () => {
     returnToLanding();
-    if (wasBotGame) handlePlayBot();
+    if (wasBotGame) handlePlayBot(prevDifficulty);
     else handleFindGame();
   };
 

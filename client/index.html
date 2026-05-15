@@ -91,6 +91,20 @@
     <!-- Connection-state notification (separate from transient toasts). -->
     <div id="connection-banner" class="connection-banner hidden" role="status" aria-live="polite"></div>
 
+    <!-- Bot difficulty picker: shown when "Practice vs Bot" is clicked. -->
+    <div id="difficulty-modal" class="modal hidden" role="dialog" aria-labelledby="difficulty-title">
+      <div class="modal-card">
+        <h2 id="difficulty-title">Choose difficulty</h2>
+        <p class="muted">How tough should Frank play?</p>
+        <div class="modal-actions difficulty-actions">
+          <button class="secondary difficulty-btn" data-difficulty="easy">Easy</button>
+          <button class="secondary difficulty-btn" data-difficulty="medium">Medium</button>
+          <button class="secondary difficulty-btn" data-difficulty="hard">Hard</button>
+        </div>
+        <button id="difficulty-cancel-btn" class="secondary difficulty-cancel">Cancel</button>
+      </div>
+    </div>
+
     <!-- Offline alert: shown when the user tries to find an online match while offline. -->
     <div id="offline-modal" class="modal hidden" role="alertdialog" aria-labelledby="offline-title">
       <div class="modal-card">

@@ -12,11 +12,12 @@ import { selectBotMove } from './bot-engine.js';
 // ---------------------------------------------------------------------------
 
 export class LocalGame {
-  constructor({ playerName, playerColor = 'white', botMinDelayMs = 350, onEvent }) {
+  constructor({ playerName, playerColor = 'white', difficulty = 'hard', botMinDelayMs = 350, onEvent }) {
     this.chess = new Chess();
     this.playerName = playerName;
     this.playerColor = playerColor;
     this.botColor = playerColor === 'white' ? 'black' : 'white';
+    this.difficulty = difficulty;
     this.botMinDelayMs = botMinDelayMs;
     this.onEvent = onEvent;
     this.gameId = 'local-bot';
@@ -42,10 +43,11 @@ export class LocalGame {
   }
 
   start() {
+    const difficultyLabel = this.difficulty.charAt(0).toUpperCase() + this.difficulty.slice(1);
     this.onEvent('gameStart', {
       gameId: this.gameId,
       color: this.playerColor,
-      opponentName: 'Frank',
+      opponentName: `Frank (${difficultyLabel})`,
       initialFen: this.chess.fen(),
     });
     if (this._currentColor() === this.botColor) this._scheduleBotMove();
@@ -154,13 +156,13 @@ export class LocalGame {
 
     if (this.worker) {
       this._handleNextMove = (move) => deliverMove(move);
-      this.worker.postMessage({ type: 'compute', fen, reqId });
+      this.worker.postMessage({ type: 'compute', fen, reqId, difficulty: this.difficulty });
     } else {
       // Fallback path: defer one frame so the "Thinking…" label paints first,
       // then compute on the main thread. UI will freeze during the search.
       setTimeout(() => {
         if (this.finished || reqId !== this._pendingReqId) return;
-        deliverMove(selectBotMove(fen));
+        deliverMove(selectBotMove(fen, this.difficulty));
       }, 30);
     }
   }

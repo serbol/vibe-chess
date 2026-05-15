@@ -2,9 +2,15 @@ import { Chess } from 'chess.js';
 
 // ---------------------------------------------------------------------------
 // Engine: negamax + alpha-beta with quiescence on captures.
-// Depth 3 + 2-ply quiescence — plays tactically sound chess (sees one
-// capture/recapture sequence so it won't drop pieces in obvious trades).
+// Three difficulty levels — see DIFFICULTIES below for search depth and the
+// probability of substituting a random legal move (lets weaker bots blunder).
 // ---------------------------------------------------------------------------
+
+export const DIFFICULTIES = {
+  easy:   { searchDepth: 1, qDepth: 0, randomMoveChance: 0.35 },
+  medium: { searchDepth: 2, qDepth: 1, randomMoveChance: 0 },
+  hard:   { searchDepth: 3, qDepth: 2, randomMoveChance: 0 },
+};
 
 const PIECE_VALUES = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 0 };
 
@@ -111,10 +117,10 @@ function quiesce(chess, alpha, beta, perspective, qDepth) {
   return alpha;
 }
 
-function negamax(chess, depth, alpha, beta, perspective) {
+function negamax(chess, depth, alpha, beta, perspective, qDepth) {
   if (chess.isCheckmate()) return -100000 - depth;
   if (chess.isStalemate() || chess.isDraw()) return 0;
-  if (depth === 0) return quiesce(chess, alpha, beta, perspective, 2);
+  if (depth === 0) return quiesce(chess, alpha, beta, perspective, qDepth);
 
   const moves = chess.moves({ verbose: true });
   moves.sort((a, b) => moveOrder(b) - moveOrder(a));
@@ -122,7 +128,7 @@ function negamax(chess, depth, alpha, beta, perspective) {
   let best = -Infinity;
   for (const move of moves) {
     chess.move(move);
-    const score = -negamax(chess, depth - 1, -beta, -alpha, -perspective);
+    const score = -negamax(chess, depth - 1, -beta, -alpha, -perspective, qDepth);
     chess.undo();
     if (score > best) best = score;
     if (best > alpha) alpha = best;
@@ -131,13 +137,18 @@ function negamax(chess, depth, alpha, beta, perspective) {
   return best;
 }
 
-const SEARCH_DEPTH = 3;
 const TIEBREAK_MARGIN = 5;
 
-export function selectBotMove(fen) {
+export function selectBotMove(fen, difficulty = 'hard') {
+  const config = DIFFICULTIES[difficulty] ?? DIFFICULTIES.hard;
   const chess = new Chess(fen);
   const moves = chess.moves({ verbose: true });
   if (moves.length === 0) return null;
+
+  // Easy bots occasionally play any legal move so the human gets winnable openings.
+  if (config.randomMoveChance > 0 && Math.random() < config.randomMoveChance) {
+    return moves[(Math.random() * moves.length) | 0];
+  }
 
   const perspective = chess.turn() === 'w' ? 1 : -1;
   moves.sort((a, b) => moveOrder(b) - moveOrder(a));
@@ -148,7 +159,7 @@ export function selectBotMove(fen) {
   const scored = [];
   for (const move of moves) {
     chess.move(move);
-    const score = -negamax(chess, SEARCH_DEPTH - 1, -Infinity, Infinity, -perspective);
+    const score = -negamax(chess, config.searchDepth - 1, -Infinity, Infinity, -perspective, config.qDepth);
     chess.undo();
     scored.push({ move, score });
   }
