@@ -45,7 +45,7 @@ export class LocalGame {
     this.onEvent('gameStart', {
       gameId: this.gameId,
       color: this.playerColor,
-      opponentName: 'Bot',
+      opponentName: 'Frank',
       initialFen: this.chess.fen(),
     });
     if (this._currentColor() === this.botColor) this._scheduleBotMove();

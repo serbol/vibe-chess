@@ -96,6 +96,33 @@ async function bootstrap() {
   ui.onFindGame(handleFindGame);
   ui.onPlayBot(handlePlayBot);
 
+  // PWA install prompt — Chrome/Edge fire `beforeinstallprompt` when the app
+  // meets installability criteria (HTTPS, manifest, service worker, not
+  // already installed). We stash the event and surface our own button so the
+  // user can choose when to install instead of getting a generic browser banner.
+  let deferredInstallPrompt = null;
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredInstallPrompt = e;
+    ui.setInstallAvailable(true);
+  });
+  ui.onInstall(async () => {
+    if (!deferredInstallPrompt) return;
+    const promptEvent = deferredInstallPrompt;
+    deferredInstallPrompt = null;
+    ui.setInstallAvailable(false);
+    promptEvent.prompt();
+    try {
+      const { outcome } = await promptEvent.userChoice;
+      if (outcome === 'accepted') ui.toast('Installing vibe.chess…');
+    } catch { /* user dismissed or browser threw — no-op */ }
+  });
+  window.addEventListener('appinstalled', () => {
+    deferredInstallPrompt = null;
+    ui.setInstallAvailable(false);
+    ui.toast('vibe.chess installed.');
+  });
+
   // Offline mode: keep the menu and bot practice usable when the network is
   // down. Online matchmaking is gated by `handleFindGame` and the button is
   // visually disabled when offline.
@@ -391,8 +418,10 @@ function handleOpponentReconnected() {
 
 function handleBotThinking({ thinking }) {
   if (thinking) {
-    ui.setTurn('Bot is thinking…');
+    ui.setTurn('Frank is thinking…');
+    ui.toast('Frank is thinking…', 0);
   } else {
+    ui.hideToast();
     updateTurnLabel();
   }
 }

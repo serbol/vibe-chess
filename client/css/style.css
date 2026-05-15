@@ -162,6 +162,28 @@ button.secondary:hover { background: var(--panel-2); border-color: var(--accent-
 .card button.secondary { width: 100%; }
 .card button.secondary { margin-top: 10px; }
 
+.install-btn {
+  width: 100%;
+  margin-top: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: transparent;
+  border: 1px dashed var(--border);
+  color: var(--accent);
+  font-weight: 500;
+}
+.install-btn:hover {
+  background: rgba(246, 193, 119, 0.06);
+  border-color: var(--accent);
+  border-style: solid;
+}
+.install-btn .install-icon {
+  font-size: 14px;
+  line-height: 1;
+}
+
 .status {
   color: var(--muted);
   font-size: 14px;

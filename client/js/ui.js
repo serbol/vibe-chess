@@ -32,6 +32,15 @@ export const ui = {
   onPlayBot(handler) {
     document.getElementById('play-bot-btn').addEventListener('click', handler);
   },
+  onInstall(handler) {
+    const btn = document.getElementById('install-btn');
+    if (btn) btn.addEventListener('click', handler);
+  },
+  setInstallAvailable(available) {
+    const btn = document.getElementById('install-btn');
+    if (!btn) return;
+    btn.classList.toggle('hidden', !available);
+  },
 
   // Game header
   setPlayers(youName, oppName) {
@@ -86,13 +95,23 @@ export const ui = {
     tray.appendChild(span);
   },
 
-  // Toasts
+  // Toasts. Pass ms=0 for a sticky toast (clear via hideToast()).
   toast(msg, ms = 2400) {
     const el = document.getElementById('toast');
     el.textContent = msg;
     el.classList.remove('hidden');
     clearTimeout(el._t);
-    el._t = setTimeout(() => el.classList.add('hidden'), ms);
+    if (ms > 0) {
+      el._t = setTimeout(() => el.classList.add('hidden'), ms);
+    } else {
+      el._t = null;
+    }
+  },
+  hideToast() {
+    const el = document.getElementById('toast');
+    clearTimeout(el._t);
+    el._t = null;
+    el.classList.add('hidden');
   },
 
   /**
