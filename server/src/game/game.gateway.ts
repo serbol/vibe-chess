@@ -10,9 +10,9 @@ import {
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { ChessEngineService } from './chess-engine.service';
-import { ChatDto, GameIdDto, MoveDto } from './dto/move.dto';
+import { ChatDto, GameIdDto, MoveDto, RejoinGameDto } from './dto/move.dto';
 import { JoinGameDto } from './dto/join-game.dto';
-import { GameService } from './game.service';
+import { GameService, RECONNECT_WINDOW_MS } from './game.service';
 
 const corsOrigin = process.env.CLIENT_ORIGIN ?? '*';
 
@@ -37,19 +37,29 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.logger.log(`disconnected ${client.id}`);
     this.games.removeFromQueue(client.id);
 
-    const game = this.games.getGameForSocket(client.id);
-    if (!game || game.finished) return;
+    const result = this.games.markDisconnected(client.id);
+    if (!result) return;
+    const { game, slot } = result;
 
-    const opponentId = this.games.opponentSocketId(game, client.id);
-    if (opponentId) {
-      this.server.to(opponentId).emit('opponentDisconnected', { gameId: game.gameId });
-      // MVP: end the game immediately on disconnect. Reconnect-within-30s is a stretch goal.
-      const winner = this.games.colorOf(game, client.id) === 'white' ? 'black' : 'white';
-      this.server
-        .to(opponentId)
-        .emit('gameOver', { result: winner, reason: 'resign' });
+    const opponent = slot.color === 'white' ? game.black : game.white;
+    if (opponent.connected) {
+      this.server.to(opponent.socketId).emit('opponentDisconnected', {
+        gameId: game.gameId,
+        reconnectWindowMs: RECONNECT_WINDOW_MS,
+      });
     }
-    this.games.endGame(game.gameId);
+
+    // Give the player RECONNECT_WINDOW_MS to come back via `rejoinGame`.
+    // If they don't, end the game in favor of the opponent.
+    this.games.scheduleDisconnectTimeout(game, slot.color, () => {
+      if (game.finished) return;
+      const winner = slot.color === 'white' ? 'black' : 'white';
+      const opp = slot.color === 'white' ? game.black : game.white;
+      if (opp.connected) {
+        this.server.to(opp.socketId).emit('gameOver', { result: winner, reason: 'resign' });
+      }
+      this.games.endGame(game.gameId);
+    });
   }
 
   @SubscribeMessage('joinQueue')
@@ -66,16 +76,63 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     this.server.to(game.white.socketId).emit('gameStart', {
       gameId: game.gameId,
+      token: game.white.token,
       color: 'white',
       opponentName: game.black.name,
       initialFen: game.fen,
     });
     this.server.to(game.black.socketId).emit('gameStart', {
       gameId: game.gameId,
+      token: game.black.token,
       color: 'black',
       opponentName: game.white.name,
       initialFen: game.fen,
     });
+  }
+
+  @SubscribeMessage('rejoinGame')
+  onRejoinGame(@ConnectedSocket() client: Socket, @MessageBody() body: RejoinGameDto): void {
+    const result = this.games.rejoin(body.gameId, body.token, client.id);
+    if (!result) {
+      client.emit('rejoinFailed', { gameId: body.gameId, reason: 'game not found or already ended' });
+      return;
+    }
+    const { game, color, opponentName, reconnected } = result;
+    void this.server.in(client.id).socketsJoin(game.gameId);
+
+    const opponent = color === 'white' ? game.black : game.white;
+    // If the opponent is offline, report the time still left in their reconnect
+    // window so the client's countdown is accurate, not just the full 2 min.
+    const opponentRemainingMs = opponent.connected
+      ? RECONNECT_WINDOW_MS
+      : Math.max(0, RECONNECT_WINDOW_MS - (Date.now() - (opponent.disconnectedAt ?? Date.now())));
+    client.emit('gameRestored', {
+      gameId: game.gameId,
+      color,
+      opponentName,
+      opponentConnected: opponent.connected,
+      reconnectWindowMs: opponentRemainingMs,
+      fen: game.fen,
+      turn: game.turn,
+      lastMove: game.lastMove ?? null,
+      moveHistory: game.moveHistory.map((m) => ({
+        from: m.from,
+        to: m.to,
+        promotion: m.promotion,
+        san: m.san,
+        color: m.color,
+        capturedPiece: m.capturedPiece,
+        isCheck: m.isCheck,
+      })),
+      drawOfferedBy: game.drawOfferedBy ?? null,
+    });
+
+    if (reconnected) {
+      const opp = color === 'white' ? game.black : game.white;
+      if (opp.connected && opp.socketId !== client.id) {
+        this.server.to(opp.socketId).emit('opponentReconnected', { gameId: game.gameId });
+      }
+    }
   }
 
   @SubscribeMessage('move')
@@ -99,6 +156,16 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
 
     this.games.setFen(game, result.fen, result.turn);
+    this.games.recordMove(game, {
+      from: body.from,
+      to: body.to,
+      promotion: body.promotion,
+      san: result.san,
+      fen: result.fen,
+      color,
+      capturedPiece: result.capturedPiece,
+      isCheck: result.isCheck,
+    });
 
     this.server.to(game.gameId).emit('moveMade', {
       from: body.from,

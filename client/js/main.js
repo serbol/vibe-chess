@@ -3,6 +3,7 @@ import { Chess } from 'chess.js';
 import { socketClient } from './socket-client.js';
 import { ui } from './ui.js';
 import { LocalGame } from './bot.js';
+import { startSnowfall, stopSnowfall } from './snowfall.js';
 import { createPixiApp } from './pixi/app.js';
 import { loadAssets } from './pixi/assets.js';
 import { Board, fitBoardToScreen, BOARD_LOGICAL_SIZE } from './pixi/board.js';
@@ -19,6 +20,7 @@ import { startTweenSystem } from './pixi/animations.js';
  */
 const state = {
   gameId: null,
+  token: null, // per-player rejoin token issued by the server on gameStart
   yourColor: null,
   yourName: '',
   opponentName: '',
@@ -28,6 +30,35 @@ const state = {
   lastMove: null, // { from, to, color }
   pendingFromTo: null, // optimistic-move guard: which {from,to} we're awaiting confirmation for
 };
+
+// localStorage key for the rejoin session — survives reloads and network drops
+// so the player can recover a game by either reconnecting their socket or
+// re-opening the tab within the server's reconnect window (2 min).
+const SESSION_KEY = 'vibe-chess:session';
+
+function saveSession() {
+  if (!state.gameId || !state.token) return;
+  try {
+    localStorage.setItem(SESSION_KEY, JSON.stringify({
+      gameId: state.gameId,
+      token: state.token,
+      yourColor: state.yourColor,
+      yourName: state.yourName,
+      opponentName: state.opponentName,
+    }));
+  } catch { /* storage unavailable — rejoin still works on same tab via in-memory state */ }
+}
+
+function loadSession() {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+function clearSession() {
+  try { localStorage.removeItem(SESSION_KEY); } catch { /* ignore */ }
+}
 
 let app, layers, board, highlights, pieces, effects;
 let boardRoot;
@@ -41,12 +72,16 @@ let activeGame = null;
 const dispatch = {
   queued: () => ui.setLandingStatus('Queued — waiting for an opponent…'),
   gameStart: handleGameStart,
+  gameRestored: handleGameRestored,
+  rejoinFailed: handleRejoinFailed,
   moveMade: handleMoveMade,
   invalidMove: handleInvalidMove,
   gameOver: handleGameOver,
-  opponentDisconnected: () => ui.toast('Opponent disconnected.'),
+  opponentDisconnected: handleOpponentDisconnected,
+  opponentReconnected: handleOpponentReconnected,
   drawOffered: handleDrawOffered,
   drawDeclined: () => ui.toast('Draw declined.'),
+  botThinking: handleBotThinking,
 };
 
 // ---------------------------------------------------------------------------
@@ -54,13 +89,73 @@ const dispatch = {
 // ---------------------------------------------------------------------------
 
 async function bootstrap() {
+  // Decorative snowfall behind the landing screen — paused once a game starts.
+  startSnowfall();
+
   // Pixi mount only once the game screen is in the DOM. We init lazily on first show.
   ui.onFindGame(handleFindGame);
   ui.onPlayBot(handlePlayBot);
 
+  // Offline mode: keep the menu and bot practice usable when the network is
+  // down. Online matchmaking is gated by `handleFindGame` and the button is
+  // visually disabled when offline.
+  ui.setOnlineState(navigator.onLine);
+  window.addEventListener('offline', () => ui.setOnlineState(false));
+  window.addEventListener('online', () => {
+    ui.setOnlineState(true);
+    // If a session was sitting idle while offline, try to reconnect now.
+    if (loadSession() && !socketClient.socket?.connected) {
+      activeGame = socketClient;
+      socketClient.connect();
+    }
+  });
+
   for (const [event, fn] of Object.entries(dispatch)) socketClient.on(event, fn);
   socketClient.on('connect_error', () => ui.setLandingStatus('Could not reach the server.'));
-  socketClient.on('disconnect', () => ui.toast('Disconnected from server.'));
+
+  // Connection-state banner: warning while disconnected, green flash on restore.
+  // `wasDisconnected` ensures the first connect after page load doesn't flash
+  // a misleading "Reconnected" — there was nothing to recover from.
+  let wasDisconnected = false;
+  socketClient.on('disconnect', () => {
+    wasDisconnected = true;
+    const msg = state.gameId
+      ? 'Connection lost — reconnecting…'
+      : 'Connection lost.';
+    ui.connectionBanner(msg, 'warning');
+  });
+  socketClient.on('connect', () => {
+    if (wasDisconnected) {
+      wasDisconnected = false;
+      ui.connectionBanner('Connection restored', 'success');
+    }
+    // If we have a saved session, attempt to rejoin. Covers both initial page
+    // reloads and mid-game socket reconnects (Socket.IO fires `connect` again
+    // after a successful reconnect).
+    const session = loadSession();
+    if (!session) return;
+    activeGame = socketClient;
+    // Restore the full session into in-memory state BEFORE the rejoin round-trip.
+    // Without this, state.token stays null after reload so subsequent
+    // saveSession() calls no-op, and state.yourColor stays null while
+    // gameRestored is in flight — which lets a stale value win race conditions
+    // and visibly flips the player's perspective on the board.
+    state.gameId = session.gameId;
+    state.token = session.token;
+    state.yourColor = session.yourColor;
+    state.yourName = session.yourName;
+    state.opponentName = session.opponentName ?? '';
+    socketClient.rejoinGame(session.gameId, session.token);
+  });
+
+  // If there's a saved session and we're online, kick off a reconnect attempt
+  // immediately so the player can refresh the page mid-game and pick up where
+  // they left off. When offline we wait for the `online` event above.
+  if (loadSession() && navigator.onLine) {
+    activeGame = socketClient;
+    ui.setLandingStatus('Reconnecting to your game…');
+    socketClient.connect();
+  }
 }
 
 async function ensurePixi() {
@@ -115,6 +210,10 @@ async function ensurePixi() {
 // ---------------------------------------------------------------------------
 
 function handleFindGame() {
+  if (!navigator.onLine) {
+    ui.showOfflineAlert();
+    return;
+  }
   const name = ui.getNameInput();
   if (!name) {
     ui.setLandingStatus('Please enter a name.');
@@ -154,13 +253,16 @@ function handlePlayBot() {
 
 async function handleGameStart(payload) {
   state.gameId = payload.gameId;
+  state.token = payload.token ?? null;
   state.yourColor = payload.color;
   state.opponentName = payload.opponentName;
   state.fen = payload.initialFen;
   state.chess = new Chess(payload.initialFen);
   state.lastMove = null;
   state.pendingFromTo = null;
+  saveSession();
 
+  stopSnowfall();
   ui.showGame();
   ui.setPlayers(state.yourName, state.opponentName);
   ui.resetMoves();
@@ -173,6 +275,7 @@ async function handleGameStart(payload) {
   highlights.setLastMove(null, null);
   highlights.setCheckGlow(null);
   highlights.clearLegalMoves();
+  effects.clearCheckmate();
 
   // Resize once more after the screen swap (the mount has its final size now).
   fitBoardToScreen(app, boardRoot);
@@ -188,6 +291,110 @@ async function handleGameStart(payload) {
     activeGame?.offerDraw(state.gameId);
     ui.toast('Draw offer sent.');
   });
+}
+
+/**
+ * Restore a game in progress after the socket reconnected or the page reloaded
+ * within the server's reconnect window. The payload mirrors `gameStart` but
+ * also includes the current FEN, last move, and SAN history so we can rebuild
+ * the move list and the captured-pieces tray.
+ */
+async function handleGameRestored(payload) {
+  // Token isn't echoed back on rejoin — keep the one we already have.
+  state.gameId = payload.gameId;
+  state.yourColor = payload.color;
+  state.opponentName = payload.opponentName;
+  state.fen = payload.fen;
+  state.chess = new Chess(payload.fen);
+  state.lastMove = payload.lastMove ?? null;
+  state.pendingFromTo = null;
+  saveSession();
+
+  stopSnowfall();
+  ui.showGame();
+  ui.setPlayers(state.yourName, state.opponentName);
+  ui.resetMoves();
+  ui.resetCaptured();
+  for (const m of payload.moveHistory ?? []) {
+    ui.addMove(m.san, m.color);
+    if (m.capturedPiece) {
+      const capturedBy = m.color === state.yourColor ? 'you' : 'opp';
+      const trayPiece = m.color === 'white' ? m.capturedPiece : m.capturedPiece.toUpperCase();
+      ui.addCapturedPiece(capturedBy, trayPiece);
+    }
+  }
+  updateTurnLabel();
+
+  await ensurePixi();
+  board.setFlipped(state.yourColor === 'black');
+  pieces.setFromFen(state.fen);
+  if (payload.lastMove) {
+    highlights.setLastMove(payload.lastMove.from, payload.lastMove.to, payload.lastMove.color);
+  } else {
+    highlights.setLastMove(null, null);
+  }
+  highlights.clearLegalMoves();
+  if (state.chess.inCheck()) {
+    const kingSquare = findKingSquare(state.fen, payload.turn);
+    highlights.setCheckGlow(kingSquare);
+  } else {
+    highlights.setCheckGlow(null);
+  }
+  effects.clearCheckmate();
+
+  fitBoardToScreen(app, boardRoot);
+  effects.syncBaseTransform();
+
+  ui.onResign(() => {
+    if (!state.gameId) return;
+    activeGame?.resign(state.gameId);
+  });
+  ui.onOfferDraw(() => {
+    if (!state.gameId) return;
+    activeGame?.offerDraw(state.gameId);
+    ui.toast('Draw offer sent.');
+  });
+
+  if (payload.drawOfferedBy && payload.drawOfferedBy !== state.yourColor) {
+    handleDrawOffered();
+  }
+
+  // If the opponent is still offline, surface the warning again — the original
+  // `opponentDisconnected` event may have fired before we reconnected.
+  if (payload.opponentConnected === false) {
+    handleOpponentDisconnected({ reconnectWindowMs: payload.reconnectWindowMs });
+  } else {
+    ui.hideConnectionBanner();
+  }
+
+  ui.toast('Reconnected to your game.');
+}
+
+function handleRejoinFailed() {
+  clearSession();
+  ui.toast('Your previous game has ended.');
+  returnToLanding();
+}
+
+function handleOpponentDisconnected(payload) {
+  // Live ticking countdown so the player can watch the reconnect window expire.
+  ui.connectionBannerCountdown(
+    'Opponent lost connection —',
+    payload?.reconnectWindowMs ?? 120000,
+    'warning',
+  );
+}
+
+function handleOpponentReconnected() {
+  ui.connectionBanner('Opponent reconnected', 'success');
+}
+
+function handleBotThinking({ thinking }) {
+  if (thinking) {
+    ui.setTurn('Bot is thinking…');
+  } else {
+    updateTurnLabel();
+  }
 }
 
 async function handleMoveMade(payload) {
@@ -274,6 +481,8 @@ function handleInvalidMove({ reason }) {
 }
 
 function handleGameOver({ result, reason }) {
+  clearSession();
+  ui.hideConnectionBanner();
   let title;
   let detail;
   if (result === 'draw') {
@@ -308,6 +517,7 @@ function handleGameOver({ result, reason }) {
   }
 
   state.gameId = null;
+  state.token = null;
   state.yourColor = null;
 }
 
@@ -319,6 +529,10 @@ function handleDrawOffered() {
 }
 
 function returnToLanding() {
+  clearSession();
+  state.gameId = null;
+  state.token = null;
+  state.yourColor = null;
   state.fen = new Chess().fen();
   state.chess = new Chess();
   state.lastMove = null;
@@ -329,8 +543,10 @@ function returnToLanding() {
   highlights?.setLastMove(null, null);
   highlights?.setCheckGlow(null);
   highlights?.clearLegalMoves();
+  effects?.clearCheckmate();
   ui.showLanding();
   ui.setLandingStatus('');
+  startSnowfall();
 }
 
 // ---------------------------------------------------------------------------

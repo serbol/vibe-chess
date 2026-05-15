@@ -37,9 +37,12 @@ export class Pieces {
     /** lift on hover (sprite -> baseY). */
     this._hoveredSprite = null;
 
+    // Parent the picker to dragLayer (topmost stage layer) so it always renders
+    // above pieces. On pieceLayer it can be occluded by sprites added later
+    // when setFromFen rebuilds the board.
     this.promotionContainer = new Container({ label: 'promotion' });
     this.promotionContainer.visible = false;
-    pieceLayer.addChild(this.promotionContainer);
+    dragLayer.addChild(this.promotionContainer);
   }
 
   /**

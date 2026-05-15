@@ -1,189 +1,51 @@
 import { Chess } from 'chess.js';
-
-// ---------------------------------------------------------------------------
-// Engine: negamax + alpha-beta with quiescence on captures.
-// "Medium" bot — depth 2 main search + 2-ply quiescence. Sees one
-// capture/recapture sequence so it doesn't drop pieces in obvious trades,
-// but won't find longer tactical combinations. Suitable for training.
-// ---------------------------------------------------------------------------
-
-const PIECE_VALUES = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 0 };
-
-// Piece-square tables in centipawns, indexed 0..63 from a8..h1 (white perspective).
-// Black squares are mirrored vertically at lookup time.
-const PST_P = [
-   0,  0,  0,  0,  0,  0,  0,  0,
-  50, 50, 50, 50, 50, 50, 50, 50,
-  10, 10, 20, 30, 30, 20, 10, 10,
-   5,  5, 10, 25, 25, 10,  5,  5,
-   0,  0,  0, 20, 20,  0,  0,  0,
-   5, -5,-10,  0,  0,-10, -5,  5,
-   5, 10, 10,-20,-20, 10, 10,  5,
-   0,  0,  0,  0,  0,  0,  0,  0,
-];
-const PST_N = [
- -50,-40,-30,-30,-30,-30,-40,-50,
- -40,-20,  0,  0,  0,  0,-20,-40,
- -30,  0, 10, 15, 15, 10,  0,-30,
- -30,  5, 15, 20, 20, 15,  5,-30,
- -30,  0, 15, 20, 20, 15,  0,-30,
- -30,  5, 10, 15, 15, 10,  5,-30,
- -40,-20,  0,  5,  5,  0,-20,-40,
- -50,-40,-30,-30,-30,-30,-40,-50,
-];
-const PST_B = [
- -20,-10,-10,-10,-10,-10,-10,-20,
- -10,  0,  0,  0,  0,  0,  0,-10,
- -10,  0,  5, 10, 10,  5,  0,-10,
- -10,  5,  5, 10, 10,  5,  5,-10,
- -10,  0, 10, 10, 10, 10,  0,-10,
- -10, 10, 10, 10, 10, 10, 10,-10,
- -10,  5,  0,  0,  0,  0,  5,-10,
- -20,-10,-10,-10,-10,-10,-10,-20,
-];
-const PST_R = [
-   0,  0,  0,  0,  0,  0,  0,  0,
-   5, 10, 10, 10, 10, 10, 10,  5,
-  -5,  0,  0,  0,  0,  0,  0, -5,
-  -5,  0,  0,  0,  0,  0,  0, -5,
-  -5,  0,  0,  0,  0,  0,  0, -5,
-  -5,  0,  0,  0,  0,  0,  0, -5,
-  -5,  0,  0,  0,  0,  0,  0, -5,
-   0,  0,  0,  5,  5,  0,  0,  0,
-];
-const PST_Q = [
- -20,-10,-10, -5, -5,-10,-10,-20,
- -10,  0,  0,  0,  0,  0,  0,-10,
- -10,  0,  5,  5,  5,  5,  0,-10,
-  -5,  0,  5,  5,  5,  5,  0, -5,
-   0,  0,  5,  5,  5,  5,  0, -5,
- -10,  5,  5,  5,  5,  5,  0,-10,
- -10,  0,  5,  0,  0,  0,  0,-10,
- -20,-10,-10, -5, -5,-10,-10,-20,
-];
-const PST_K = [
- -30,-40,-40,-50,-50,-40,-40,-30,
- -30,-40,-40,-50,-50,-40,-40,-30,
- -30,-40,-40,-50,-50,-40,-40,-30,
- -30,-40,-40,-50,-50,-40,-40,-30,
- -20,-30,-30,-40,-40,-30,-30,-20,
- -10,-20,-20,-20,-20,-20,-20,-10,
-  20, 20,  0,  0,  0,  0, 20, 20,
-  20, 30, 10,  0,  0, 10, 30, 20,
-];
-const PST = { p: PST_P, n: PST_N, b: PST_B, r: PST_R, q: PST_Q, k: PST_K };
-
-function evaluate(chess) {
-  // Score in centipawns from white's perspective.
-  let score = 0;
-  const board = chess.board(); // [rank8..rank1][fileA..fileH]
-  for (let r = 0; r < 8; r++) {
-    for (let f = 0; f < 8; f++) {
-      const piece = board[r][f];
-      if (!piece) continue;
-      const value = PIECE_VALUES[piece.type];
-      // PST is white-perspective: white reads index r*8+f directly,
-      // black reads it mirrored across the horizontal midline.
-      const idx = piece.color === 'w' ? r * 8 + f : (7 - r) * 8 + f;
-      const pst = PST[piece.type][idx];
-      score += (piece.color === 'w' ? 1 : -1) * (value + pst);
-    }
-  }
-  return score;
-}
-
-// MVV-LVA: capture most valuable victim with least valuable attacker.
-function moveOrder(move) {
-  if (!move.captured) return 0;
-  return 10 * PIECE_VALUES[move.captured] - PIECE_VALUES[move.piece];
-}
-
-function quiesce(chess, alpha, beta, perspective, qDepth) {
-  const standPat = perspective * evaluate(chess);
-  if (standPat >= beta) return beta;
-  if (standPat > alpha) alpha = standPat;
-  if (qDepth === 0) return alpha;
-
-  const captures = chess.moves({ verbose: true }).filter((m) => m.captured);
-  captures.sort((a, b) => moveOrder(b) - moveOrder(a));
-  for (const move of captures) {
-    chess.move(move);
-    const score = -quiesce(chess, -beta, -alpha, -perspective, qDepth - 1);
-    chess.undo();
-    if (score >= beta) return beta;
-    if (score > alpha) alpha = score;
-  }
-  return alpha;
-}
-
-function negamax(chess, depth, alpha, beta, perspective) {
-  if (chess.isCheckmate()) return -100000 - depth;
-  if (chess.isStalemate() || chess.isDraw()) return 0;
-  if (depth === 0) return quiesce(chess, alpha, beta, perspective, 2);
-
-  const moves = chess.moves({ verbose: true });
-  moves.sort((a, b) => moveOrder(b) - moveOrder(a));
-
-  let best = -Infinity;
-  for (const move of moves) {
-    chess.move(move);
-    const score = -negamax(chess, depth - 1, -beta, -alpha, -perspective);
-    chess.undo();
-    if (score > best) best = score;
-    if (best > alpha) alpha = best;
-    if (alpha >= beta) break;
-  }
-  return best;
-}
-
-export function selectBotMove(fen, depth = 2) {
-  const chess = new Chess(fen);
-  const perspective = chess.turn() === 'w' ? 1 : -1;
-  const moves = chess.moves({ verbose: true });
-  if (moves.length === 0) return null;
-  moves.sort((a, b) => moveOrder(b) - moveOrder(a));
-
-  let alpha = -Infinity;
-  const beta = Infinity;
-  const scored = [];
-  for (const move of moves) {
-    chess.move(move);
-    const score = -negamax(chess, depth - 1, -beta, -alpha, -perspective);
-    chess.undo();
-    scored.push({ move, score });
-    if (score > alpha) alpha = score;
-  }
-  // Random tiebreak among near-equal moves so games aren't deterministic.
-  const bestScore = Math.max(...scored.map((s) => s.score));
-  const top = scored.filter((s) => s.score >= bestScore - 10);
-  return top[Math.floor(Math.random() * top.length)].move;
-}
+import { selectBotMove } from './bot-engine.js';
 
 // ---------------------------------------------------------------------------
 // LocalGame: emulates the server's event protocol for a single human-vs-bot
 // game. Same method names as socketClient (sendMove/resign/offerDraw/etc.)
 // so main.js can treat it as a drop-in replacement.
+//
+// The expensive move search runs in a Web Worker so Pixi animations and DOM
+// updates don't freeze while the bot thinks. A 'botThinking' event is emitted
+// to the host so it can show "Thinking…" in the UI.
 // ---------------------------------------------------------------------------
 
 export class LocalGame {
-  constructor({ playerName, playerColor = 'white', botDelayMs = 500, depth = 2, onEvent }) {
+  constructor({ playerName, playerColor = 'white', botMinDelayMs = 350, onEvent }) {
     this.chess = new Chess();
     this.playerName = playerName;
     this.playerColor = playerColor;
     this.botColor = playerColor === 'white' ? 'black' : 'white';
-    this.botDelayMs = botDelayMs;
-    this.depth = depth;
+    this.botMinDelayMs = botMinDelayMs;
     this.onEvent = onEvent;
     this.gameId = 'local-bot';
     this.finished = false;
     this._botTimer = null;
+    this._reqId = 0;
+    this._pendingReqId = null;
+
+    this.worker = null;
+    if (typeof Worker !== 'undefined') {
+      try {
+        this.worker = new Worker(new URL('./bot-worker.js', import.meta.url), { type: 'module' });
+        this.worker.onmessage = (e) => this._onWorkerMessage(e.data);
+        this.worker.onerror = (err) => {
+          console.warn('bot worker error — falling back to main-thread compute', err);
+          this.worker = null;
+        };
+      } catch (err) {
+        console.warn('bot worker unavailable — falling back to main-thread compute', err);
+        this.worker = null;
+      }
+    }
   }
 
   start() {
     this.onEvent('gameStart', {
       gameId: this.gameId,
       color: this.playerColor,
-      opponentName: 'Bot (Medium)',
+      opponentName: 'Bot',
       initialFen: this.chess.fen(),
     });
     if (this._currentColor() === this.botColor) this._scheduleBotMove();
@@ -215,6 +77,10 @@ export class LocalGame {
   stop() {
     this.finished = true;
     this._cancelBotMove();
+    if (this.worker) {
+      this.worker.terminate();
+      this.worker = null;
+    }
   }
 
   _currentColor() {
@@ -264,13 +130,47 @@ export class LocalGame {
 
   _scheduleBotMove() {
     this._cancelBotMove();
-    this._botTimer = setTimeout(() => {
-      this._botTimer = null;
-      if (this.finished) return;
-      const move = selectBotMove(this.chess.fen(), this.depth);
-      if (!move) return;
-      this._applyMove(move.from, move.to, move.promotion);
-    }, this.botDelayMs);
+    const reqId = ++this._reqId;
+    this._pendingReqId = reqId;
+
+    // Tell the UI to show "Thinking…" before the (potentially long) search.
+    this.onEvent('botThinking', { thinking: true });
+    const startedAt = Date.now();
+    const fen = this.chess.fen();
+
+    const deliverMove = (move) => {
+      if (this.finished || reqId !== this._pendingReqId) return;
+      // Enforce a small minimum delay so very fast responses still feel like
+      // the bot is "thinking" — avoids jarring instant moves in simple positions.
+      const elapsed = Date.now() - startedAt;
+      const wait = Math.max(0, this.botMinDelayMs - elapsed);
+      this._botTimer = setTimeout(() => {
+        this._botTimer = null;
+        if (this.finished) return;
+        this.onEvent('botThinking', { thinking: false });
+        if (move) this._applyMove(move.from, move.to, move.promotion);
+      }, wait);
+    };
+
+    if (this.worker) {
+      this._handleNextMove = (move) => deliverMove(move);
+      this.worker.postMessage({ type: 'compute', fen, reqId });
+    } else {
+      // Fallback path: defer one frame so the "Thinking…" label paints first,
+      // then compute on the main thread. UI will freeze during the search.
+      setTimeout(() => {
+        if (this.finished || reqId !== this._pendingReqId) return;
+        deliverMove(selectBotMove(fen));
+      }, 30);
+    }
+  }
+
+  _onWorkerMessage(data) {
+    if (!data || data.type !== 'result') return;
+    if (data.reqId !== this._pendingReqId) return; // stale response
+    const handler = this._handleNextMove;
+    this._handleNextMove = null;
+    handler?.(data.move);
   }
 
   _cancelBotMove() {
@@ -278,5 +178,8 @@ export class LocalGame {
       clearTimeout(this._botTimer);
       this._botTimer = null;
     }
+    // Bump pending id so any in-flight worker response is ignored.
+    this._pendingReqId = null;
+    this._handleNextMove = null;
   }
 }

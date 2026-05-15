@@ -2,14 +2,25 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#0d1014" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="vibe.chess" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="apple-touch-icon" href="/icon.svg" />
     <title>vibe chess</title>
     <link rel="stylesheet" href="/css/style.css" />
   </head>
   <body>
+    <!-- Snowfall background (decorative, behind everything). -->
+    <div id="snowfall" class="snowfall" aria-hidden="true"></div>
+
     <!-- Landing screen -->
     <section id="screen-landing" class="screen">
       <div class="card">
+        <img class="logo" src="/icon.svg" alt="vibe.chess logo" width="96" height="96" />
         <h1>vibe<span class="accent">.chess</span></h1>
         <p class="muted">Enter a name and find a match.</p>
         <input id="name-input" type="text" maxlength="24" placeholder="Your name" autocomplete="off" />
@@ -73,6 +84,35 @@
       </div>
     </section>
 
+    <!-- Connection-state notification (separate from transient toasts). -->
+    <div id="connection-banner" class="connection-banner hidden" role="status" aria-live="polite"></div>
+
+    <!-- Offline alert: shown when the user tries to find an online match while offline. -->
+    <div id="offline-modal" class="modal hidden" role="alertdialog" aria-labelledby="offline-title">
+      <div class="modal-card">
+        <h2 id="offline-title">Please enable Internet connection!</h2>
+        <p class="muted">Online matches need a network connection. You can still practice against the bot in offline mode.</p>
+        <div class="modal-actions">
+          <button id="offline-ok-btn" class="primary">OK</button>
+        </div>
+      </div>
+    </div>
+
+
     <script type="module" src="/js/main.js"></script>
+    <script>
+      // Register the service worker for offline support / installability.
+      // Skip on localhost so Vite HMR isn't intercepted in dev.
+      (function () {
+        if (!('serviceWorker' in navigator)) return;
+        var host = location.hostname;
+        if (host === 'localhost' || host === '127.0.0.1') return;
+        window.addEventListener('load', function () {
+          navigator.serviceWorker.register('/sw.js').catch(function (err) {
+            console.warn('service worker registration failed:', err);
+          });
+        });
+      })();
+    </script>
   </body>
 </html>

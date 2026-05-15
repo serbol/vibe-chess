@@ -31,9 +31,48 @@ html, body {
   align-items: center;
   justify-content: flex-start;
   padding: 24px;
+  position: relative;
+  z-index: 1;
 }
 
 .hidden { display: none !important; }
+
+/* Snowfall background — falling chess glyphs behind the foreground content.
+   Outer .snowflake handles the vertical fall; inner .snowflake-glyph handles
+   horizontal sway. Split so the two animations don't fight over `transform`. */
+.snowfall {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+.snowflake {
+  position: absolute;
+  top: -8vh;
+  will-change: transform;
+  animation: snowfall-fall linear forwards;
+}
+.snowflake-glyph {
+  display: inline-block;
+  color: var(--accent);
+  text-shadow: 0 0 6px rgba(246, 193, 119, 0.35);
+  user-select: none;
+  will-change: transform;
+  animation: snowfall-sway ease-in-out infinite alternate;
+}
+@keyframes snowfall-fall {
+  0%   { transform: translate3d(0, -8vh, 0) rotate(0deg); }
+  100% { transform: translate3d(0, 108vh, 0) rotate(360deg); }
+}
+@keyframes snowfall-sway {
+  0%   { transform: translateX(-14px); }
+  100% { transform: translateX(14px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .snowfall { display: none; }
+}
 
 /* Landing screen */
 #screen-landing {
@@ -49,6 +88,16 @@ html, body {
   max-width: 420px;
   box-shadow: var(--shadow);
   text-align: center;
+  position: relative;
+  z-index: 1;
+}
+
+.card .logo {
+  display: block;
+  margin: 0 auto 12px auto;
+  width: 96px;
+  height: 96px;
+  filter: drop-shadow(0 4px 16px rgba(246, 193, 119, 0.25));
 }
 
 .card h1 {
@@ -88,6 +137,14 @@ button {
 }
 button:hover { background: #232a39; border-color: #3a4254; }
 button:active { transform: translateY(1px); }
+button:disabled,
+button.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  filter: grayscale(0.4);
+}
+button:disabled:hover,
+button.disabled:hover { background: var(--panel-2); border-color: var(--border); transform: none; }
 button.primary {
   background: linear-gradient(180deg, #f6c177 0%, #e0a85c 100%);
   color: #1a1208;
@@ -225,6 +282,57 @@ button.secondary:hover { background: var(--panel-2); border-color: var(--accent-
   to { opacity: 1; transform: translate(-50%, 0); }
 }
 
+/* Connection-state banner — separate from the transient toast so the two can
+   coexist. Warning is sticky (no auto-hide); success auto-hides. */
+.connection-banner {
+  position: fixed;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 10px 18px 10px 38px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  font-size: 14px;
+  font-weight: 500;
+  box-shadow: var(--shadow);
+  z-index: 1001;
+  max-width: calc(100vw - 32px);
+  animation: toast-in 0.22s ease-out;
+}
+.connection-banner::before {
+  content: '';
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  transform: translateY(-50%);
+}
+.connection-banner.warning {
+  background: rgba(60, 38, 16, 0.92);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.connection-banner.warning::before {
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+  animation: banner-pulse 1.2s ease-in-out infinite;
+}
+.connection-banner.success {
+  background: rgba(20, 50, 30, 0.92);
+  border-color: var(--ok);
+  color: var(--ok);
+}
+.connection-banner.success::before {
+  background: var(--ok);
+  box-shadow: 0 0 6px var(--ok);
+}
+@keyframes banner-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
 /* Modal */
 .modal {
   position: fixed;
@@ -249,18 +357,80 @@ button.secondary:hover { background: var(--panel-2); border-color: var(--accent-
 .modal-card p { margin: 0 0 16px 0; }
 .modal-actions { display: flex; gap: 8px; justify-content: center; }
 
-/* Responsive */
+
+/* Responsive — phones / portrait tablets: single column, board takes full width. */
 @media (max-width: 900px) {
   #screen-game {
     grid-template-columns: 1fr;
+    grid-template-rows: auto auto auto;
+    gap: 10px;
+    padding: 10px;
+    justify-content: stretch;
   }
+
+  .game-header {
+    grid-column: 1;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px;
+    text-align: center;
+  }
+  .player-info { flex-wrap: wrap; justify-content: center; }
+  .game-controls { width: 100%; justify-content: center; }
+  .game-controls button { flex: 1; max-width: 200px; }
+
   .game-main {
     grid-column: 1;
-    grid-template-columns: 40px 1fr 40px;
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto auto;
+    gap: 6px;
   }
+
+  .board-mount {
+    grid-row: 2;
+    width: 100%;
+    max-width: none;
+    border-radius: 4px;
+  }
+
+  .captured-tray {
+    flex-direction: row;
+    flex-wrap: wrap;
+    height: auto;
+    min-height: 36px;
+    width: 100%;
+    padding: 6px 10px;
+    gap: 6px;
+    font-size: 20px;
+    justify-content: flex-start;
+    align-items: center;
+  }
+  .captured-left  { grid-row: 1; }
+  .captured-right { grid-row: 3; }
+
   .move-history {
     grid-column: 1;
     height: auto;
-    max-height: 200px;
+    max-height: 180px;
+    padding: 12px;
   }
+}
+
+/* Stack modal action buttons vertically on phones so they fit and read clearly. */
+@media (max-width: 600px) {
+  .modal-actions {
+    flex-direction: column;
+    gap: 10px;
+  }
+  .modal-actions button {
+    width: 100%;
+  }
+}
+
+/* Very small phones: tighten further so the board still dominates the viewport. */
+@media (max-width: 480px) {
+  #screen-game { padding: 6px; gap: 8px; }
+  .game-header { padding: 10px; }
+  .card { padding: 28px 20px; }
+  .modal-card { min-width: 0; width: calc(100vw - 32px); padding: 24px; }
 }

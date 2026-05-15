@@ -29,3 +29,11 @@ export class ChatDto {
   @IsString()
   text!: string;
 }
+
+export class RejoinGameDto {
+  @IsString()
+  gameId!: string;
+
+  @IsString()
+  token!: string;
+}

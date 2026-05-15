@@ -95,6 +95,68 @@ export const ui = {
     el._t = setTimeout(() => el.classList.add('hidden'), ms);
   },
 
+  /**
+   * Persistent connection-status banner at the bottom of the viewport.
+   * severity is 'warning' (sticky by default) or 'success' (auto-hides).
+   * Pass `ms` to override the auto-hide duration; pass 0 to keep it sticky.
+   */
+  connectionBanner(msg, severity, ms) {
+    const el = document.getElementById('connection-banner');
+    if (!el) return;
+    el.textContent = msg;
+    el.classList.remove('hidden', 'warning', 'success');
+    el.classList.add(severity);
+    clearTimeout(el._t);
+    if (el._countdown) {
+      clearInterval(el._countdown);
+      el._countdown = null;
+    }
+    const defaultMs = severity === 'success' ? 2400 : 0;
+    const hideAfter = ms === undefined ? defaultMs : ms;
+    if (hideAfter > 0) {
+      el._t = setTimeout(() => el.classList.add('hidden'), hideAfter);
+    }
+  },
+
+  /**
+   * Sticky warning with a live countdown — used while the opponent is offline.
+   * Renders `${prefix} ${seconds}s` and ticks down every second. Replaced /
+   * cleared automatically when connectionBanner or hideConnectionBanner runs.
+   */
+  connectionBannerCountdown(prefix, durationMs, severity = 'warning') {
+    const el = document.getElementById('connection-banner');
+    if (!el) return;
+    el.classList.remove('hidden', 'warning', 'success');
+    el.classList.add(severity);
+    clearTimeout(el._t);
+    if (el._countdown) clearInterval(el._countdown);
+
+    const endAt = Date.now() + Math.max(0, durationMs);
+    const render = () => {
+      const remaining = Math.max(0, Math.ceil((endAt - Date.now()) / 1000));
+      el.textContent = remaining > 0
+        ? `${prefix} ${remaining}s left…`
+        : `${prefix} time expired`;
+      if (remaining <= 0 && el._countdown) {
+        clearInterval(el._countdown);
+        el._countdown = null;
+      }
+    };
+    render();
+    el._countdown = setInterval(render, 1000);
+  },
+
+  hideConnectionBanner() {
+    const el = document.getElementById('connection-banner');
+    if (!el) return;
+    clearTimeout(el._t);
+    if (el._countdown) {
+      clearInterval(el._countdown);
+      el._countdown = null;
+    }
+    el.classList.add('hidden');
+  },
+
   // Draw modal
   showDrawOffered(onAccept, onDecline) {
     const modal = document.getElementById('draw-modal');
@@ -110,6 +172,34 @@ export const ui = {
     const onD = () => { cleanup(); onDecline(); };
     accept.addEventListener('click', onA);
     decline.addEventListener('click', onD);
+  },
+
+  // Offline alert — shown when a user tries to find an online match while offline.
+  showOfflineAlert() {
+    const modal = document.getElementById('offline-modal');
+    modal.classList.remove('hidden');
+    const ok = document.getElementById('offline-ok-btn');
+    const onOk = () => {
+      modal.classList.add('hidden');
+      ok.removeEventListener('click', onOk);
+    };
+    ok.addEventListener('click', onOk);
+  },
+
+  /** Toggle the "you are offline" label on the landing screen and disable the matchmaking button. */
+  setOnlineState(online) {
+    const findBtn = document.getElementById('find-game-btn');
+    if (findBtn) {
+      findBtn.disabled = !online;
+      findBtn.classList.toggle('disabled', !online);
+      findBtn.title = online ? '' : 'Offline — only Practice vs Bot is available';
+    }
+    if (!online) {
+      this.setLandingStatus('Offline — only Practice vs Bot is available.');
+    } else {
+      const status = document.getElementById('landing-status');
+      if (status && status.textContent.startsWith('Offline')) status.textContent = '';
+    }
   },
 
   // Game over

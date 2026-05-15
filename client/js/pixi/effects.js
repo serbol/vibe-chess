@@ -91,6 +91,14 @@ export class Effects {
     }
   }
 
+  /** Remove the lingering "Checkmate" overlay (called when a new game starts). */
+  clearCheckmate() {
+    if (this._checkmateText) {
+      this._checkmateText.destroy();
+      this._checkmateText = null;
+    }
+  }
+
   /** Big celebratory effect on checkmate. */
   async checkmate(loserKingSquare, board, winnerColor) {
     // Bigger, slower particle burst at the losing king.
@@ -119,7 +127,8 @@ export class Effects {
       onComplete: () => flash.destroy(),
     });
 
-    // Big "Checkmate" text scaling in.
+    // Big "Checkmate" text scaling in. Stored so a new game can clear it.
+    this.clearCheckmate();
     const text = new Text({
       text: 'Checkmate',
       style: {
@@ -135,6 +144,7 @@ export class Effects {
     text.scale.set(0);
     text.alpha = 0;
     this.layer.addChild(text);
+    this._checkmateText = text;
 
     await tween({
       duration: 0.55,

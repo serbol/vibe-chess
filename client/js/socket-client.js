@@ -49,6 +49,10 @@ class SocketClient {
     this.emit('joinQueue', { playerName });
   }
 
+  rejoinGame(gameId, token) {
+    this.emit('rejoinGame', { gameId, token });
+  }
+
   sendMove(gameId, from, to, promotion) {
     this.emit('move', { gameId, from, to, ...(promotion ? { promotion } : {}) });
   }
